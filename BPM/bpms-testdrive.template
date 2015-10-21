@@ -1,0 +1,81 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "AWS & Red Hat TestDrive: BPM Loan by CITYTECH, Inc",
+
+  "Parameters" : {
+    "InstanceType" : {
+      "Description" : "Medium Elastic Compute Resource",
+      "Type" : "String",
+      "Default" : "m1.medium",
+      "AllowedValues" : [ "m1.medium" ],
+      "ConstraintDescription" : "must be a valid EC2 instance type."
+    },
+
+    "KeyName" : {
+      "Description" : "KeyPair to enable SSH access",
+      "Type" : "String",
+      "MinLength" : "1",
+      "MaxLength" : "255",
+      "Default" : "aws-testdrive",
+      "AllowedPattern" : "[\\x20-\\x7E]*",
+      "ConstraintDescription" : "can contain only ASCII characters."
+    },
+    
+    "SSHLocation" : {
+      "Description" : "IP address range that can be used to SSH to the EC2 instances",
+      "Type" : "String",
+      "MinLength" : "9",
+      "MaxLength" : "18",
+      "Default" : "0.0.0.0/0",
+      "AllowedPattern" : "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription" : "must be a valid IP CIDR range of the form x.x.x.x/x."
+    }
+  },
+
+  "Mappings" : {
+    "AWSInstanceType2Arch" : {
+      "m1.medium" : { "Arch" : "64" }
+    },
+
+    "AWSRegionArch2AMI" : {
+      "us-east-1" : { "64" : "ami-4fa19026" }
+    }
+  },
+
+  "Resources" : {
+    "Ec2Instance" : {
+      "Type" : "AWS::EC2::Instance", 
+      "Properties" : {
+        "ImageId" : { "Fn::FindInMap" : [ "AWSRegionArch2AMI", { "Ref" : "AWS::Region" }, 
+                                          { "Fn::FindInMap" : [ "AWSInstanceType2Arch", { "Ref" : "InstanceType" }, "Arch" ] } ] },
+        "InstanceType" : { "Ref" : "InstanceType" },
+	"AvailabilityZone" : "us-east-1a",
+	"KeyName" : { "Ref" : "KeyName" },
+	"SecurityGroupIds" : [ "sg-3b06fb5e" ]
+	}
+      },
+    "EBSVolume" : {
+       "Type" : "AWS::EC2::Volume",
+          "Properties" : {
+		"SnapshotId" : "snap-06427614",
+	        "AvailabilityZone" : "us-east-1a"
+	      }
+	}
+    },
+
+  "Outputs" : {
+  	"DisplayBrokerURL" :{
+          	"Description" : "URL to begin TestDrive Lab",
+            	"Value" :  { "Fn::Join" : [ "", [ "http://", { "Fn::GetAtt" : [ "Ec2Instance", "PublicDnsName" ]}, ":9990/console" ]]}
+         },
+	 "PublicDNS" : {
+	 	"Description" : "Public DNSName of your EC2 instance",
+	 	"Value" : { "Fn::GetAtt" : [ "Ec2Instance", "PublicDnsName" ] }
+	},
+	 "PublicIP" : {
+	 	"Description" : "Public IP address of your EC2 instance",
+	 	"Value" : { "Fn::GetAtt" : [ "Ec2Instance", "PublicIp" ] }
+	}
+    }
+}

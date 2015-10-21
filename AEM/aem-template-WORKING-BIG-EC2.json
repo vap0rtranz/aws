@@ -1,0 +1,34 @@
+{
+  "Description": "AEM TestDrive CF",
+
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Resources": {
+    "Ec2Instance": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "DisableApiTermination": "FALSE",
+        "ImageId": "ami-988452f0",
+        "InstanceType": "m3.large",
+        "KernelId": "aki-1eceaf77",
+        "KeyName": "aem-test-drive",
+        "Monitoring": "false",
+	"SecurityGroupIds" : [ "sg-fb86ff9e" ]
+      }
+     }
+    },
+
+  "Outputs" : {
+          "DisplayAuthorURL" :{
+                  "Description" : "URL to begin Author Lab",
+                  "Value" :  { "Fn::Join" : [ "", [ "http://", { "Fn::GetAtt" : [ "Ec2Instance", "PublicDnsName" ]}, ":4502/" ]]}
+           },
+          "DisplayPublisherURL" :{
+                  "Description" : "URL to begin Publisher Lab",
+                  "Value" :  { "Fn::Join" : [ "", [ "http://", { "Fn::GetAtt" : [ "Ec2Instance", "PublicDnsName" ]}, ":4503/" ]]}
+           },
+            "PublicDNS" : {
+                    "Description" : "Public DNSName of your EC2 instance",
+                    "Value" : { "Fn::GetAtt" : [ "Ec2Instance", "PublicDnsName" ] }
+            }
+         }
+}
