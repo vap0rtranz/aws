@@ -1,0 +1,1329 @@
+{
+  "Description": "Lab 2: Creates an EC2 Auto Scaling Group, Elastic Load Balancer and scales the fleet using Bees with Machine Guns",
+  "Parameters": {
+    "KeyName": {
+      "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "64",
+      "AllowedPattern": "[-_ a-zA-Z0-9]*",
+      "ConstraintDescription": "can contain only alphanumeric characters, spaces, dashes and underscores."
+    },
+    "InstanceType": {
+      "Description": "WebServer EC2 instance type, t1 or m3 family only.",
+      "Type": "String",
+      "AllowedValues": [
+        "t2.micro",
+        "t2.small",
+        "t2.medium",
+        "m3.medium",
+        "m3.large",
+        "m3.xlarge",
+        "m3.2xlarge"
+      ],
+      "ConstraintDescription": "must be a valid EC2 instance type.",
+      "Default": "t2.medium"
+    },
+    "NotificationEmailAddress": {
+      "Description": "An email address to receive notifications about EC2 AutoScaling events",
+      "Type": "String",
+      "AllowedPattern": "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]+",
+      "ConstraintDescription": "must enter a valid email address.",
+      "Default": "nobody@amazon.com"
+    },
+    "BeesControllerInstanceType": {
+      "Description": "Type of EC2 instance to launch",
+      "Type": "String",
+      "Default": "t2.micro",
+      "AllowedValues": [
+        "t2.micro",
+        "t2.small",
+        "t2.medium",
+        "m3.medium",
+        "m3.large",
+        "m3.xlarge",
+        "m3.2xlarge"
+      ],
+      "ConstraintDescription": "Must be a valid EC2 instance type."
+    },
+    "TotalConnections": {
+      "Description": "Total connections per load tester",
+      "Type": "Number",
+      "Default": "100000"
+    },
+    "ConcurrentConnections": {
+      "Description": "Number of concurrent requests per load tester",
+      "Type": "Number",
+      "Default": "40"
+    },
+    "BeeCount": {
+      "Description": "Number of EC2 instances to launch as the load generators (bees)",
+      "Type": "Number",
+      "Default": "3"
+    },
+    "RunTests": {
+      "Description": "Enter 'true' to run tests immediately. WARNING: CreateStack will not finish until test executes if this is set to 'true'",
+      "Type": "String",
+      "Default": "false",
+      "AllowedValues": [
+        "true",
+        "false"
+      ],
+      "ConstraintDescription": "Must be 'true' or 'false'."
+    },
+    "SSHLocation": {
+      "Description": "The IP address range that can be used to SSH to the EC2 instances",
+      "Type": "String",
+      "MinLength": "9",
+      "MaxLength": "18",
+      "Default": "0.0.0.0/0",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x/x."
+    }
+  },
+  "Mappings": {
+    "AWSInstanceType2Arch": {
+      "t2.micro": {
+        "Arch": "64"
+      },
+      "t2.small": {
+        "Arch": "64"
+      },
+      "t2.medium": {
+        "Arch": "64"
+      },
+      "m3.medium": {
+        "Arch": "64"
+      },
+      "m3.large": {
+        "Arch": "64"
+      },
+      "m3.xlarge": {
+        "Arch": "64"
+      },
+      "m3.2xlarge": {
+        "Arch": "64"
+      }
+    },
+    "AWSRegionArch2AMI": {
+      "us-east-1": {
+        "64": "ami-08842d60"
+      },
+      "us-west-1": {
+        "64": "ami-cfa8a18a"
+      },
+      "us-west-2": {
+        "64": "ami-8786c6b7"
+      },
+      "eu-west-1": {
+        "64": "ami-748e2903"
+      },
+      "ap-southeast-1": {
+        "64": "ami-d6e1c584"
+      },
+      "ap-northeast-1": {
+        "64": "ami-35072834"
+      },
+      "ap-southeast-2": {
+        "64": "ami-fd4724c7"
+      },
+      "sa-east-1": {
+        "64": "ami-956cc688"
+      }
+    },
+    "AWSRegionPlatform2AMI": {
+      "us-east-1": {
+        "amzn": "ami-08842d60",
+        "bee": "ami-e661c18f"
+      },
+      "us-west-1": {
+        "amzn": "ami-cfa8a18a",
+        "bee": "ami-93b5efd6"
+      },
+      "eu-west-1": {
+        "amzn": "ami-748e2903",
+        "bee": "ami-67212413"
+      },
+      "ap-southeast-1": {
+        "amzn": "ami-d6e1c584",
+        "bee": "ami-38bef86a"
+      },
+      "ap-northeast-1": {
+        "amzn": "ami-35072834",
+        "bee": "ami-16ac1f17"
+      },
+      "us-west-2": {
+        "amzn": "ami-8786c6b7",
+        "bee": "ami-bc05898c"
+      },
+      "sa-east-1": {
+        "amzn": "ami-956cc688",
+        "bee": "ami-5a12cc47"
+      }
+    }
+  },
+  "Resources": {
+    "CloudWikiIAMUser": {
+      "Type": "AWS::IAM::User",
+      "Properties": {
+        "Path": "/",
+        "Policies": [
+          {
+            "PolicyName": "root",
+            "PolicyDocument": {
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "*"
+                  ],
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "CloudWikiIAMAccessKey": {
+      "Type": "AWS::IAM::AccessKey",
+      "Properties": {
+        "UserName": {
+          "Ref": "CloudWikiIAMUser"
+        }
+      }
+    },
+    "CloudWikiWebServerSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "CloudWiki web servers",
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "80",
+            "ToPort": "80",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ]
+      }
+    },
+    "CloudWikiDBSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "CloudWiki DB servers",
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "3306",
+            "ToPort": "3306",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ]
+      }
+    },
+    "CloudWikiDBInstance": {
+      "Type": "AWS::EC2::Instance",
+      "Metadata": {
+        "AWS::CloudFormation::Init": {
+          "config": {
+            "packages": {
+              "yum": {
+                "mysql-server": []
+              }
+            },
+            "sources": {
+              "/tmp": "http://sajee-public.s3.amazonaws.com/training/ahaa/current/wikipedia-cloud-computing-20121012.sql.tar.bz2"
+            },
+            "services": {
+              "sysvinit": {
+                "mysqld": {
+                  "enabled": "true",
+                  "ensureRunning": "true"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Properties": {
+        "ImageId": {
+          "Fn::FindInMap": [
+            "AWSRegionArch2AMI",
+            {
+              "Ref": "AWS::Region"
+            },
+            {
+              "Fn::FindInMap": [
+                "AWSInstanceType2Arch",
+                {
+                  "Ref": "InstanceType"
+                },
+                "Arch"
+              ]
+            }
+          ]
+        },
+        "InstanceType": {
+          "Ref": "InstanceType"
+        },
+        "KeyName": {
+          "Ref": "KeyName"
+        },
+        "SecurityGroups": [
+          {
+            "Ref": "CloudWikiDBSecurityGroup"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "cloudwiki-lab2-db"
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash\n",
+                "# Helper function\n",
+                "function error_exit\n",
+                "{\n",
+                "  /opt/aws/bin/cfn-signal -e 0 -r \"$1\" '",
+                {
+                  "Ref": "CloudWikiDBWaitHandle"
+                },
+                "'\n",
+                "  exit 1\n",
+                "}\n",
+                "/opt/aws/bin/cfn-init",
+                "    --stack ",
+                {
+                  "Ref": "AWS::StackName"
+                },
+                " -r CloudWikiDBInstance",
+                "    --access-key ",
+                {
+                  "Ref": "CloudWikiIAMAccessKey"
+                },
+                "    --secret-key ",
+                {
+                  "Fn::GetAtt": [
+                    "CloudWikiIAMAccessKey",
+                    "SecretAccessKey"
+                  ]
+                },
+                "    --region     ",
+                {
+                  "Ref": "AWS::Region"
+                },
+                "\n",
+                "mysqladmin -u root password 3tM2bccYZnzsgD\n",
+                "mysqladmin --user=root --password=3tM2bccYZnzsgD create cloudwiki\n",
+                "echo \"GRANT ALL ON *.* to root@'%' IDENTIFIED BY '3tM2bccYZnzsgD'; FLUSH PRIVILEGES;\" | mysql -u root -p3tM2bccYZnzsgD mysql\n",
+                "mysql ",
+                "    --user=root",
+                "    --password=3tM2bccYZnzsgD",
+                "    --database=cloudwiki",
+                "    < /tmp/wikipedia-cloud-computing-20121012.sql\n",
+                "/opt/aws/bin/cfn-signal -e $? '",
+                {
+                  "Ref": "CloudWikiDBWaitHandle"
+                },
+                "'\n"
+              ]
+            ]
+          }
+        }
+      },
+      "DependsOn": "CloudWikiDBSecurityGroup"
+    },
+    "CloudWikiDBWaitHandle": {
+      "Type": "AWS::CloudFormation::WaitConditionHandle"
+    },
+    "CloudWikiLoadBalancer": {
+      "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+      "Properties": {
+        "AvailabilityZones": {
+          "Fn::GetAZs": ""
+        },
+        "CrossZone": "true",
+        "HealthCheck": {
+          "HealthyThreshold": "2",
+          "Interval": "45",
+          "Target": "HTTP:80/hc.html",
+          "Timeout": "10",
+          "UnhealthyThreshold": "7"
+        },
+        "Listeners": [
+          {
+            "InstancePort": "80",
+            "InstanceProtocol": "http",
+            "LoadBalancerPort": "80",
+            "Protocol": "http"
+          }
+        ]
+      }
+    },
+    "CloudWikiWebServerIamRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "ec2.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+        "Path": "/"
+      }
+    },
+    "CloudWikiWebServerIamRolePolicies": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "PolicyName": "root",
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": "*",
+              "Resource": "*"
+            }
+          ]
+        },
+        "Roles": [
+          {
+            "Ref": "CloudWikiWebServerIamRole"
+          }
+        ]
+      }
+    },
+    "CloudWikiWebServerIamInstanceProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "Path": "/",
+        "Roles": [
+          {
+            "Ref": "CloudWikiWebServerIamRole"
+          }
+        ]
+      }
+    },
+    "CloudWikiASLaunchConfig": {
+      "Type": "AWS::AutoScaling::LaunchConfiguration",
+      "Metadata": {
+        "AWS::CloudFormation::Init": {
+          "config": {
+            "packages": {
+              "yum": {
+                "git": [],
+                "httpd": [],
+                "php": [],
+                "php-amazon-sdk": [],
+                "php-mysqlnd": [],
+                "ImageMagick": []
+              }
+            },
+            "sources": {
+              "/var/www/html": "http://sajee-public.s3.amazonaws.com/training/ahaa/current/mediawiki-1.19.2.zip",
+              "/var/www/html/": "http://sajee-public.s3.amazonaws.com/training/ahaa/current/LocalS3Repo-20121106.zip",
+              "/var/www/html//": "http://sajee-public.s3.amazonaws.com/training/ahaa/current/Cite-aa635f09f8edcda1b78ee2a9e2c7c7830fcaeb41.tar.gz",
+              "/var/www/html///": "https://s3.amazonaws.com/sajee-public/training/ahaa/current/health-check.zip"
+            },
+            "files": {
+              "/var/www/html/mediawiki-1.19.2/LocalSettings.php": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "<?php\n",
+                      "\n",
+                      "if (!defined('MEDIAWIKI')) {\n",
+                      "    exit;\n",
+                      "}\n",
+                      "\n",
+                      "$wgSitename                     = 'CloudWiki';\n",
+                      "$wgScriptPath                   = '/wiki';\n",
+                      "$wgScriptExtension              = '.php';\n",
+                      "$wgServer                       = 'http://",
+                      {
+                        "Fn::GetAtt": [
+                          "CloudWikiLoadBalancer",
+                          "DNSName"
+                        ]
+                      },
+                      "';\n",
+                      "#$wgServer                       = 'http://' . exec('/usr/bin/curl -q http://169.254.169.254/latest/meta-data/public-hostname');\n",
+                      "$wgStylePath                    = \"$wgScriptPath/skins\";\n",
+                      "$wgEnableEmail                  = false;\n",
+                      "$wgEnableUserEmail              = true; # UPO\n",
+                      "$wgEmergencyContact             = 'nobody@amazon.com';\n",
+                      "$wgPasswordSender               = 'nobody@amazon.com';\n",
+                      "$wgEnotifUserTalk               = false; # UPO\n",
+                      "$wgEnotifWatchlist              = false; # UPO\n",
+                      "$wgEmailAuthentication          = true;\n",
+                      "$wgLogo                         = \"$wgServer/wiki/images/cloud-wiki-logo.png\";\n",
+                      "$wgDBtype                       = 'mysql';\n",
+                      "$wgDBserver                     = '",
+                      {
+                         "Fn::GetAtt":[ "CloudWikiDBInstance", "PrivateIp" ] 
+                      },
+                      "';\n",
+                      "$wgDBname                       = 'cloudwiki';\n",
+                      "$wgDBuser                       = 'root';\n",
+                      "$wgDBpassword                   = '3tM2bccYZnzsgD';\n",
+                      "$wgDBprefix                     = '';\n",
+                      "$wgDBTableOptions               = 'ENGINE=MyISAM, DEFAULT CHARSET=binary';\n",
+                      "$wgDBmysql5                     = false;\n",
+                      "\n",
+                      "########## BEGIN Performance and caching variables ##########\n",
+                      "$wgMainCacheType                = CACHE_ACCEL;\n",
+                      "$wgCacheDirectory               = \"$IP/cache\";\n",
+                      "$wgFileCacheDirectory           = \"$IP/filecache\";\n",
+                      "$wgMemCachedServers             = array();\n",
+                      "$wgUseFileCache                 = true;\n",
+                      "$wgUseGzip                      = true;\n",
+                      "$wgEnableSidebarCache           = true;\n",
+                      "$wgDisableCounters              = true;\n",
+                      "$wgMiserMode                    = true;\n",
+                      "$wgCompressRevisions            = true;\n",
+                      "$wgRevisionCacheExpiry          = 3*24*3600;\n",
+                      "$wgParserCacheExpireTime        = 14*24*3600;\n",
+                      "########## END Performance and caching variables ##########\n",
+                      "\n",
+                      "$wgEnableUploads                = false;\n",
+                      "$wgUseImageMagick               = true;\n",
+                      "$wgImageMagickConvertCommand    = '/usr/bin/convert';\n",
+                      "$wgUseInstantCommons            = true;\n",
+                      "$wgShellLocale                  = 'en_US.utf8';\n",
+                      "$wgCacheDirectory               = \"$IP/cache\";\n",
+                      "$wgLanguageCode                 = 'en';\n",
+                      "$wgSecretKey                    = '52c7e3cba94080ae9e11080e597aad886ea074cc49d1c498a1c3cb066a628ffb';\n",
+                      "$wgUpgradeKey                   = '185e61a597779ed9';\n",
+                      "$wgDefaultSkin                  = 'vector';\n",
+                      "$wgDiff3                        = '/usr/bin/diff3';\n",
+                      "$wgResourceLoaderMaxQueryLength = -1;\n",
+                      "$wgShowExceptionDetails         = true;\n",
+                      "\n",
+                      "require_once(\"$IP/extensions/Cite/Cite.php\");\n",
+                      "require_once(\"$IP/extensions/ParserFunctions/ParserFunctions.php\");\n",
+                      "\n"
+                    ]
+                  ]
+                }
+              }
+            },
+            "services": {
+              "sysvinit": {
+                "httpd": {
+                  "enabled": "true",
+                  "ensureRunning": "true"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Properties": {
+        "IamInstanceProfile": {
+          "Ref": "CloudWikiWebServerIamInstanceProfile"
+        },
+        "ImageId": {
+          "Fn::FindInMap": [
+            "AWSRegionArch2AMI",
+            {
+              "Ref": "AWS::Region"
+            },
+            {
+              "Fn::FindInMap": [
+                "AWSInstanceType2Arch",
+                {
+                  "Ref": "InstanceType"
+                },
+                "Arch"
+              ]
+            }
+          ]
+        },
+        "InstanceMonitoring": "true",
+        "InstanceType": {
+          "Ref": "InstanceType"
+        },
+        "KeyName": {
+          "Ref": "KeyName"
+        },
+        "SecurityGroups": [
+          {
+            "Ref": "CloudWikiWebServerSecurityGroup"
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash\n",
+                "# Helper function\n",
+                "function error_exit\n",
+                "{\n",
+                "  /opt/aws/bin/cfn-signal -e 0 -r \"$1\" '",
+                {
+                  "Ref": "CloudWikiDBWaitHandle"
+                },
+                "'\n",
+                "  exit 1\n",
+                "}\n",
+                "/opt/aws/bin/cfn-init",
+                "    --stack ",
+                {
+                  "Ref": "AWS::StackName"
+                },
+                " -r CloudWikiASLaunchConfig",
+                "    --access-key ",
+                {
+                  "Ref": "CloudWikiIAMAccessKey"
+                },
+                "    --secret-key ",
+                {
+                  "Fn::GetAtt": [
+                    "CloudWikiIAMAccessKey",
+                    "SecretAccessKey"
+                  ]
+                },
+                "    --region ",
+                {
+                  "Ref": "AWS::Region"
+                },
+                "\n",
+                "cd /var/www/html\n",
+                "mv -v mediawiki-1.19.2 wiki\n",
+                "mkdir -pv /var/www/html/wiki/images\n",
+                "mkdir -pv /var/www/html/wiki/cache\n",
+                "mkdir -pv /var/www/html/wiki/filecache\n",
+                "mv -v /var/www/html/LocalS3Repo /var/www/html/wiki/extensions\n",
+                "mv -v /var/www/html/Cite /var/www/html/wiki/extensions\n",
+                "cd /var/www/html/wiki/images\n",
+                "curl -O http://sajee-public.s3.amazonaws.com/training/ahaa/current/cloud-wiki-logo.png \n",
+                "chown -R apache:apache /var/www/html/\n"
+              ]
+            ]
+          }
+        }
+      }
+    },
+    "WebServerScaleUpPolicy": {
+      "Type": "AWS::AutoScaling::ScalingPolicy",
+      "Properties": {
+        "AdjustmentType": "ChangeInCapacity",
+        "AutoScalingGroupName": {
+          "Ref": "CloudWikiAutoScalingGroup"
+        },
+        "Cooldown": "60",
+        "ScalingAdjustment": "1"
+      }
+    },
+    "WebServerScaleDownPolicy": {
+      "Type": "AWS::AutoScaling::ScalingPolicy",
+      "Properties": {
+        "AdjustmentType": "ChangeInCapacity",
+        "AutoScalingGroupName": {
+          "Ref": "CloudWikiAutoScalingGroup"
+        },
+        "Cooldown": "60",
+        "ScalingAdjustment": "-1"
+      }
+    },
+    "CPUAlarmHigh": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "Scale-up if CPU > 60% for 2 minutes",
+        "MetricName": "CPUUtilization",
+        "Namespace": "AWS/EC2",
+        "Statistic": "Average",
+        "Period": "60",
+        "EvaluationPeriods": "2",
+        "Threshold": "60",
+        "AlarmActions": [
+          {
+            "Ref": "WebServerScaleUpPolicy"
+          }
+        ],
+        "Dimensions": [
+          {
+            "Name": "AutoScalingGroupName",
+            "Value": {
+              "Ref": "CloudWikiAutoScalingGroup"
+            }
+          }
+        ],
+        "ComparisonOperator": "GreaterThanThreshold"
+      }
+    },
+    "CPUAlarmLow": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "Scale-down if CPU < 40% for 180 minutes",
+        "MetricName": "CPUUtilization",
+        "Namespace": "AWS/EC2",
+        "Statistic": "Average",
+        "Period": "60",
+        "EvaluationPeriods": "180",
+        "Threshold": "40",
+        "AlarmActions": [
+          {
+            "Ref": "WebServerScaleDownPolicy"
+          }
+        ],
+        "Dimensions": [
+          {
+            "Name": "AutoScalingGroupName",
+            "Value": {
+              "Ref": "CloudWikiAutoScalingGroup"
+            }
+          }
+        ],
+        "ComparisonOperator": "LessThanThreshold"
+      }
+    },
+    "CloudWikiAutoScalingSNSTopic": {
+      "Type": "AWS::SNS::Topic",
+      "Properties": {
+        "Subscription": [
+          {
+            "Endpoint": {
+              "Ref": "NotificationEmailAddress"
+            },
+            "Protocol": "Email"
+          }
+        ]
+      }
+    },
+    "CloudWikiAutoScalingGroup": {
+      "Type": "AWS::AutoScaling::AutoScalingGroup",
+      "Properties": {
+        "AvailabilityZones": {
+          "Fn::GetAZs": ""
+        },
+        "Cooldown": "30",
+        "DesiredCapacity": "2",
+        "HealthCheckGracePeriod": "60",
+        "HealthCheckType": "ELB",
+        "LaunchConfigurationName": {
+          "Ref": "CloudWikiASLaunchConfig"
+        },
+        "LoadBalancerNames": [
+          {
+            "Ref": "CloudWikiLoadBalancer"
+          }
+        ],
+        "MaxSize": "5",
+        "MinSize": "2",
+        "NotificationConfiguration": {
+          "TopicARN": {
+            "Ref": "CloudWikiAutoScalingSNSTopic"
+          },
+          "NotificationTypes": [
+            "autoscaling:EC2_INSTANCE_LAUNCH",
+            "autoscaling:EC2_INSTANCE_LAUNCH_ERROR",
+            "autoscaling:EC2_INSTANCE_TERMINATE",
+            "autoscaling:EC2_INSTANCE_TERMINATE_ERROR",
+            "autoscaling:TEST_NOTIFICATION"
+          ]
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "cloudwiki-lab2-www",
+            "PropagateAtLaunch": "true"
+          }
+        ]
+      }
+    },
+    "CfnUser": {
+      "Type": "AWS::IAM::User",
+      "Properties": {
+        "Path": "/",
+        "Policies": [
+          {
+            "PolicyName": "root",
+            "PolicyDocument": {
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": "cloudformation:DescribeStackResource",
+                  "Resource": "*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": "elasticloadbalancing:DescribeInstanceHealth",
+                  "Resource": "*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": "ec2:*",
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "CfnKeys": {
+      "Type": "AWS::IAM::AccessKey",
+      "Properties": {
+        "UserName": {
+          "Ref": "CfnUser"
+        }
+      }
+    },
+    "BeeController": {
+      "Type": "AWS::EC2::Instance",
+      "Metadata": {
+        "AWS::CloudFormation::Init": {
+          "config": {
+            "packages": {
+              "yum": {
+                "gcc": [],
+                "gcc-c++": [],
+                "make": [],
+                "openssl-devel": [],
+                "httpd": [],
+                "python-paramiko": [],
+                "gmp-devel": [],
+                "python26-devel": []
+              }
+            },
+            "files": {
+              "/home/ec2-user/create-keypair": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "#!/usr/bin/python\n",
+                      "import string\n",
+                      "import random\n",
+                      "import boto.ec2\n",
+                      "kp_name = ''.join(random.choice(string.letters) for i in xrange(16))\n",
+                      "ec2 = boto.ec2.connect_to_region('",
+                      {
+                        "Ref": "AWS::Region"
+                      },
+                      "')\n",
+                      "keypair = ec2.create_key_pair(kp_name)\n",
+                      "keypair.save('/home/ec2-user/.ssh/')\n",
+                      "with file('/home/ec2-user/bees_keypair.txt', 'w') as f:\n",
+                      "     f.write(kp_name)\n",
+                      "print 'Created keypair: %s' % kp_name\n"
+                    ]
+                  ]
+                },
+                "mode": "000750",
+                "owner": "ec2-user",
+                "group": "ec2-user"
+              },
+              "/home/ec2-user/delete-keypair": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "#!/usr/bin/python\n",
+                      "import string\n",
+                      "import random\n",
+                      "import boto.ec2\n",
+                      "import os\n",
+                      "import sys\n",
+                      "if not os.path.exists('/home/ec2-user/bees_keypair.txt'):\n",
+                      "     print >> sys.stderr, 'bees_keypair.txt does not exist'\n",
+                      "     sys.exit(-1)\n",
+                      "with file('/home/ec2-user/bees_keypair.txt', 'r') as f:\n",
+                      "     kp_name = f.read().strip()\n",
+                      "ec2 = boto.ec2.connect_to_region('",
+                      {
+                        "Ref": "AWS::Region"
+                      },
+                      "')\n",
+                      "ec2.delete_key_pair(kp_name)\n",
+                      "os.remove('/home/ec2-user/bees_keypair.txt')\n",
+                      "os.remove('/home/ec2-user/.ssh/%s.pem' % kp_name)\n",
+                      "print 'Deleted keypair: %s' % kp_name\n"
+                    ]
+                  ]
+                },
+                "mode": "000750",
+                "owner": "ec2-user",
+                "group": "ec2-user"
+              },
+              "/home/ec2-user/create-swarm": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "#!/bin/bash\n",
+                      "/usr/bin/bees up -t t2.micro -k `cat /home/ec2-user/bees_keypair.txt` -s ",
+                      {
+                        "Ref": "BeeCount"
+                      },
+                      " -z ",
+                      {
+                        "Fn::Select": [
+                          "1",
+                          {
+                            "Fn::GetAZs": ""
+                          }
+                        ]
+                      },
+                      " -g ",
+                      {
+                        "Ref": "BeeSecurityGroup"
+                      },
+                      " --instance ",
+                      {
+                        "Fn::FindInMap": [
+                          "AWSRegionPlatform2AMI",
+                          {
+                            "Ref": "AWS::Region"
+                          },
+                          "amzn"
+                        ]
+                      },
+                      " --login ec2-user\n"
+                    ]
+                  ]
+                },
+                "mode": "000755",
+                "owner": "ec2-user",
+                "group": "ec2-user"
+              },
+              "/home/ec2-user/start-swarm": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "#!/bin/bash\n",
+                      "/usr/bin/bees attack --url ",
+                      {
+                        "Fn::Join": [
+                          "",
+                          [
+                            "http://",
+                            {
+                              "Fn::GetAtt": [
+                                "CloudWikiLoadBalancer",
+                                "DNSName"
+                              ]
+                            },
+                            "/wiki/"
+                          ]
+                        ]
+                      },
+                      " -n ",
+                      {
+                        "Ref": "TotalConnections"
+                      },
+                      " --concurrent ",
+                      {
+                        "Ref": "ConcurrentConnections"
+                      }
+                    ]
+                  ]
+                },
+                "mode": "000755",
+                "owner": "ec2-user",
+                "group": "ec2-user"
+              },
+              "/home/ec2-user/kill-swarm": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "#!/bin/bash\n",
+                      "/usr/bin/bees down\n"
+                    ]
+                  ]
+                },
+                "mode": "000755",
+                "owner": "ec2-user",
+                "group": "ec2-user"
+              },
+              "/home/ec2-user/.boto": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "[Credentials]\n",
+                      "aws_access_key_id = ",
+                      {
+                        "Ref": "CfnKeys"
+                      },
+                      "\n",
+                      "aws_secret_access_key = ",
+                      {
+                        "Fn::GetAtt": [
+                          "CfnKeys",
+                          "SecretAccessKey"
+                        ]
+                      },
+                      "\n",
+                      "[Boto]\n",
+                      "ec2_region_name = ",
+                      {
+                        "Ref": "AWS::Region"
+                      },
+                      "\n",
+                      "ec2_region_endpoint = ec2.",
+                      {
+                        "Ref": "AWS::Region"
+                      },
+                      ".amazonaws.com\n",
+                      "elb_region_name = ",
+                      {
+                        "Ref": "AWS::Region"
+                      },
+                      "\n",
+                      "elb_region_endpoint = elasticloadbalancing.",
+                      {
+                        "Ref": "AWS::Region"
+                      },
+                      ".amazonaws.com\n"
+                    ]
+                  ]
+                },
+                "mode": "000600",
+                "owner": "ec2-user",
+                "group": "ec2-user"
+              },
+              "/home/ec2-user/run-bees": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "#!/bin/bash\n\n",
+                      "if [ $? -eq 0 ]\n",
+                      "then\n",
+                      "  rm -rf /home/ec2-user/swarm-results\n",
+                      "  mkdir -p /home/ec2-user/swarm-results\n",
+                      "  /home/ec2-user/create-keypair > /home/ec2-user/swarm-results/create-keypair.log 2>&1\n",
+                      "  bash /home/ec2-user/create-swarm > /home/ec2-user/swarm-results/create-swarm.log 2>&1\n",
+                      "  sleep 450 # Allow EC2 instances to fully come up\n",
+                      "  bash /home/ec2-user/start-swarm > /home/ec2-user/swarm-results/start-swarm.log 2>&1\n",
+                      "  bash /home/ec2-user/kill-swarm > /home/ec2-user/swarm-results/kill-swarm.log 2>&1\n",
+                      "  /home/ec2-user/delete-keypair > /home/ec2-user/swarm-results/delete-keypair.log 2>&1\n",
+                      "  tar cvf /home/ec2-user/swarm-results.tar.gz /home/ec2-user/swarm-results/*\n",
+                      "  chown ec2-user:ec2-user -R /home/ec2-user/swarm-results\n",
+                      "  chown ec2-user:ec2-user /home/ec2-user/swarm-results.tar.gz\n",
+                      "else\n",
+                      "  exit 1\n",
+                      "fi\n"
+                    ]
+                  ]
+                },
+                "mode": "000755",
+                "owner": "ec2-user",
+                "group": "ec2-user"
+              },
+              "/home/ec2-user/tools/aws": {
+                "source": "https://raw.github.com/timkay/aws/master/aws",
+                "mode": "000755",
+                "owner": "ec2-user",
+                "group": "ec2-user"
+              },
+              "/var/www/html/index.html": {
+                "source": "https://s3.amazonaws.com/bgd_public/boot_camp/HA/Lab2/index.html",
+                "mode": "000755",
+                "owner": "root",
+                "group": "root"
+              },
+              "/var/www/cgi-bin/runBees.cgi": {
+                "source": "https://s3.amazonaws.com/bgd_public/boot_camp/HA/Lab2/runBees.cgi",
+                "mode": "000755",
+                "owner": "root",
+                "group": "root"
+              },
+              "/etc/httpd/conf/httpd.conf": {
+                "source": "https://s3.amazonaws.com/bgd_public/boot_camp/HA/Lab2/httpd.conf",
+                "mode": "000644",
+                "owner": "root",
+                "group": "root"
+              },
+              "/home/ec2-user/.awssecret": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Ref": "CfnKeys"
+                      },
+                      "\n",
+                      {
+                        "Fn::GetAtt": [
+                          "CfnKeys",
+                          "SecretAccessKey"
+                        ]
+                      }
+                    ]
+                  ]
+                },
+                "mode": "000600",
+                "owner": "ec2-user",
+                "group": "ec2-user"
+              },
+              "/root/.awssecret": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Ref": "CfnKeys"
+                      },
+                      "\n",
+                      {
+                        "Fn::GetAtt": [
+                          "CfnKeys",
+                          "SecretAccessKey"
+                        ]
+                      }
+                    ]
+                  ]
+                },
+                "mode": "000600",
+                "owner": "root",
+                "group": "root"
+              }
+            },
+            "commands": {
+              "00install_aws": {
+                "command": [
+                  "perl",
+                  "/home/ec2-user/tools/aws",
+                  "--install"
+                ]
+              },
+              "01run_bees": {
+                "command": [
+                  "su",
+                  "ec2-user",
+                  "-c",
+                  "./run-bees"
+                ],
+                "cwd": "/home/ec2-user",
+                "test": [
+                  "test",
+                  "true",
+                  "=",
+                  {
+                    "Ref": "RunTests"
+                  }
+                ]
+              },
+              "02make_group": {
+                "command": [
+                  "groupadd",
+                  "ec2-group"
+                ]
+              },
+              "03add_users1": {
+                "command": [
+                  "usermod",
+                  "-a",
+                  "-G",
+                  "ec2-group",
+                  "ec2-user"
+                ]
+              },
+              "04start_httpd": {
+                "command": [
+                  "httpd",
+                  "-k",
+                  "start"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "Properties": {
+        "SecurityGroups": [
+          {
+            "Ref": "ControllerSecurityGroup"
+          }
+        ],
+        "KeyName": {
+          "Ref": "KeyName"
+        },
+        "ImageId": {
+          "Fn::FindInMap": [
+            "AWSRegionPlatform2AMI",
+            {
+              "Ref": "AWS::Region"
+            },
+            "amzn"
+          ]
+        },
+        "InstanceType": {
+          "Ref": "BeesControllerInstanceType"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "bees-controller"
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash\n",
+                "yum update -y aws-cfn-bootstrap\n",
+                "easy_install https://sajee-public.s3.amazonaws.com/training/ahaa/ahaa-reinvent-2013/beeswithmachineguns-0f8df8b9ac81fad690000a17d5e657bf079c9e20-modified.zip >& /home/ec2-user/easy_install.log\n",
+                "/opt/aws/bin/cfn-init -v -s ",
+                {
+                  "Ref": "AWS::StackName"
+                },
+                " -r BeeController --access-key ",
+                {
+                  "Ref": "CfnKeys"
+                },
+                " --secret-key ",
+                {
+                  "Fn::GetAtt": [
+                    "CfnKeys",
+                    "SecretAccessKey"
+                  ]
+                },
+                " --region ",
+                {
+                  "Ref": "AWS::Region"
+                },
+                "\n",
+                "/opt/aws/bin/cfn-signal -e $? '",
+                {
+                  "Ref": "ControllerHandle"
+                },
+                "'\n"
+              ]
+            ]
+          }
+        }
+      }
+    },
+    "ControllerSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Enable SSH and Web access",
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": {
+              "Ref": "SSHLocation"
+            }
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "80",
+            "ToPort": "80",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ]
+      }
+    },
+    "BeeSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Enable SSH access and HTTP access on the inbound port",
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "SourceSecurityGroupName": {
+              "Ref": "ControllerSecurityGroup"
+            }
+          }
+        ]
+      }
+    },
+    "ControllerHandle": {
+      "Type": "AWS::CloudFormation::WaitConditionHandle"
+    },
+    "ControllerCondition": {
+      "Type": "AWS::CloudFormation::WaitCondition",
+      "DependsOn": "BeeController",
+      "Properties": {
+        "Handle": {
+          "Ref": "ControllerHandle"
+        },
+        "Timeout": "900"
+      }
+    }
+  },
+  "Outputs": {
+    "WikiURL": {
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "http://",
+            {
+              "Fn::GetAtt": [
+                "CloudWikiLoadBalancer",
+                "DNSName"
+              ]
+            },
+            "/wiki/"
+          ]
+        ]
+      }
+    },
+    "BeeControllerAddress": {
+      "Description": "Public address of the bees controller",
+      "Value": {
+        "Fn::GetAtt": [
+          "BeeController",
+          "PublicDnsName"
+        ]
+      }
+    },
+    "BeeStarterPage": {
+      "Description": "Web page to kick off the Bees with Machine Guns Load Test",
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "http://",
+            {
+              "Fn::GetAtt": [
+                "BeeController",
+                "PublicDnsName"
+              ]
+            },
+            "/"
+          ]
+        ]
+      }
+    }
+  }
+}

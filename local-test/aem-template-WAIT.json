@@ -1,0 +1,90 @@
+{
+"Description": "AEM TestDrive CF",
+
+"AWSTemplateFormatVersion": "2010-09-09",
+"Resources": {
+  "AuthorEIP": { "Type": "AWS::EC2::EIP" },
+  "PublisherEIP": { "Type": "AWS::EC2::EIP" },
+  "AuthorInstance": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "DisableApiTermination": "FALSE",
+        "ImageId": "ami-00812868",
+        "InstanceType": "m3.large",
+        "KeyName": "aem-test-drive",
+        "Monitoring": "false",
+	"SecurityGroupIds" : [ "sg-fb86ff9e" ],
+	"UserData" : { "Fn::Base64" : { "Fn::Join" : [ "", [
+		"#!/bin/bash\n",
+		"service aem-author start\n",
+		"OUTPUT=\n",
+		"CHECK=\"curl -u admin:admin http://",  { "Ref" : "AuthorEIP" }, ":4502/etc/replication/agents.author/publish.html | grep 'url:' | tr -d ' '\"\n",
+		"until [[ $OUTPUT == url* ]]; do sleep 5; OUTPUT=`eval $CHECK`; done\n",
+		"curl -u admin:admin -X POST -FtransportUri=http://", { "Ref" : "PublisherEIP" }, ":4503/bin/receive?sling:authRequestLogin=1 http://", { "Ref" : "AuthorEIP" }, ":4502/etc/replication/agents.author/publish/jcr:content\n",
+		"curl -X PUT -H 'Content-Type:' --data-binary '{\"Status\" : \"SUCCESS\",\"Reason\" : \"Replica agent setup\",\"UniqueId\" : \"1234\",\"Data\" : \"Wait condition done\"}' \"", { "Ref" : "AEMReplicaWaitHandle" }, "\"\n"
+		]]}},
+	"Tags": [ {
+			"Key": "Name",
+			"Value": "author-aem"
+		} ]
+	},
+	"DependsOn": [ "AuthorEIP", "PublisherEIP" ]
+	},
+   "PublisherInstance": { 
+    	"Type": "AWS::EC2::Instance", 
+    	"Properties": {
+        "DisableApiTermination": "FALSE",
+        "ImageId": "ami-021ec06a",
+        "InstanceType": "m3.large",
+        "KeyName": "aem-test-drive",
+        "Monitoring": "false",
+	"SecurityGroupIds" : [ "sg-fb86ff9e" ],
+	"Tags": [ {
+			"Key": "Name",
+			"Value": "publisher-aem"
+		} ]
+   },
+    "DependsOn": [ "AuthorEIP", "PublisherEIP" ]
+    },
+   "AEMReplicaWaitHandle" : {
+   	"Type" : "AWS::CloudFormation::WaitConditionHandle",
+   	"Properties" : { }
+   	},
+   "AEMReplicaWaitCondition" : {
+   	"Type" : "AWS::CloudFormation::WaitCondition",
+   	"DependsOn" : [ "AuthorEIPAssociate", "PublisherEIPAssociate" ],
+   	"Properties" : {
+   		"Handle" : { "Ref" : "AEMReplicaWaitHandle" },
+   		"Timeout" : "600"
+   	}
+  },
+  "AuthorEIPAssociate": {
+     "Type": "AWS::EC2::EIPAssociation",
+	   "Properties": {
+		    "InstanceId": { "Ref": "AuthorInstance" },
+				"EIP": { "Ref": "AuthorEIP" }
+			},
+		"DependsOn": [ "AuthorEIP", "AuthorInstance" ]
+	},
+  "PublisherEIPAssociate": {
+     "Type": "AWS::EC2::EIPAssociation",
+	   "Properties": {
+		    "InstanceId": { "Ref": "PublisherInstance" },
+				"EIP": { "Ref": "PublisherEIP" }
+		},
+		"DependsOn": [ "PublisherEIP", "PublisherInstance" ]
+	 }
+ },
+
+"Outputs" : {
+  "DisplayPublisherURL" :{
+    "Description" : "URL of your Website",
+    "Value" :  { "Fn::Join" : [ "", [ "http://", { "Fn::GetAtt" : [ "PublisherInstance", "PublicDnsName" ]}, ":4503/" ]]}
+  },
+  "DisplayAuthorURL" :{
+    "Description" : "URL of Authoring consoles",
+    "Value" :  { "Fn::Join" : [ "", [ "http://", { "Fn::GetAtt" : [ "AuthorInstance", "PublicDnsName" ]}, ":4502/" ]]}
+  }
+ }
+}
+

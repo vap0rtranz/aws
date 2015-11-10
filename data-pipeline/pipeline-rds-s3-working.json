@@ -1,0 +1,85 @@
+{
+  "objects": [
+    {
+      "occurrences": "1",
+      "period": "1 Day",
+      "name": "RunOnce",
+      "id": "DefaultSchedule",
+      "type": "Schedule",
+      "startAt": "FIRST_ACTIVATION_DATE_TIME"
+    },
+    {
+      "schedule": {
+        "ref": "DefaultSchedule"
+      },
+      "filePath": "s3://pops-test/data-pipeline/output.csv",
+      "name": "S3Bucket",
+      "id": "DataNodeId_0rT6J",
+      "type": "S3DataNode"
+    },
+    {
+      "*password": "db_password",
+      "name": "PostgresRDS",
+      "id": "DatabaseId_q12l9",
+      "region": "eu-west-1",
+      "type": "RdsDatabase",
+      "rdsInstanceId": "db-instance-test",
+      "username": "db_username"
+    },
+    {
+      "failureAndRerunMode": "CASCADE",
+      "schedule": {
+        "ref": "DefaultSchedule"
+      },
+      "resourceRole": "DataPipelineDefaultResourceRole",
+      "role": "DataPipelineDefaultRole",
+      "pipelineLogUri": "s3://pops-test/data-pipeline/",
+      "scheduleType": "cron",
+      "name": "Default",
+      "id": "Default"
+    },
+    {
+      "output": {
+        "ref": "DataNodeId_0rT6J"
+      },
+      "input": {
+        "ref": "DataNodeId_nJH4a"
+      },
+      "schedule": {
+        "ref": "DefaultSchedule"
+      },
+      "name": "DumpDB",
+      "runsOn": {
+        "ref": "ResourceId_rAZiD"
+      },
+      "id": "ActivityId_qgmgC",
+      "type": "CopyActivity"
+    },
+    {
+      "schedule": {
+        "ref": "DefaultSchedule"
+      },
+      "resourceRole": "DataPipelineDefaultResourceRole",
+      "role": "DataPipelineDefaultRole",
+      "securityGroupIds": "sg-54d87430",
+      "name": "EC2Worker",
+      "id": "ResourceId_rAZiD",
+      "type": "Ec2Resource",
+      "terminateAfter": "1 Hour"
+    },
+    {
+      "schedule": {
+        "ref": "DefaultSchedule"
+      },
+      "database": {
+        "ref": "DatabaseId_q12l9"
+      },
+      "name": "PostgresDB",
+      "id": "DataNodeId_nJH4a",
+      "type": "SqlDataNode",
+      "table": "table_name",
+      "selectQuery": "SELECT * FROM table_name"
+    }
+  ],
+  "parameters": []
+}

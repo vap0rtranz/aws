@@ -1,0 +1,97 @@
+{
+  "objects": [
+    {
+      "role": "DataPipelineDefaultRole",
+      "subject": "RDS to S3 copy succeeded!",
+      "name": "DP-Success-Alarm",
+      "id": "ActionId1",
+      "message": "This is a success message.",
+      "type": "SnsAlarm",
+      "topicArn": "arn:aws:sns:eu-west-1:993251146127:data-pipeline-notice"
+    },
+    {
+      "schedule": {
+        "ref": "DefaultSchedule"
+      },
+      "filePath": "s3://pops-test/data-pipeline/output.csv",
+      "name": "DP-DataSource-Bucket",
+      "id": "S3DataNodeId1",
+      "type": "S3DataNode"
+    },
+    {
+      "name": "DP-DataSource-DB",
+      "id" : "RdsDatabase",
+      "type" : "RdsDatabase",
+      "schedule": {
+      "ref": "DefaultSchedule"
+      },
+      "region" : "eu-west-1",
+      "username": "db_username",
+      "*password": "db_password",
+      "rdsInstanceId" : "db-instance-test",
+      "databaseName": "db_name"
+    },
+    {
+      "output": {
+        "ref": "S3DataNodeId1"
+      },
+      "schedule": {
+        "ref": "DefaultSchedule"
+      },
+      "onFail": {
+        "ref": "SnsAlarmId1"
+      },
+      "name": "DP-Activity-Copy-DB",
+      "id": "CopyActivityId1",
+      "runsOn": {
+        "ref": "Ec2ResourceId1"
+      },
+      "type": "CopyActivity",
+      "onSuccess": {
+        "ref": "ActionId1"
+      }
+    },
+    {
+      "schedule": {
+        "ref": "DefaultSchedule"
+      },
+      "resourceRole": "DataPipelineDefaultResourceRole",
+      "role": "DataPipelineDefaultRole",
+      "securityGroupIds": "sg-54d87430",
+      "name": "DP-Resource-EC2",
+      "id": "Ec2ResourceId1",
+      "type": "Ec2Resource",
+      "terminateAfter": "1 Hour"
+    },
+    {
+      "failureAndRerunMode": "CASCADE",
+      "schedule": {
+        "ref": "DefaultSchedule"
+      },
+      "resourceRole": "DataPipelineDefaultResourceRole",
+      "role": "DataPipelineDefaultRole",
+      "pipelineLogUri": "s3://pops-test/data-pipeline/",
+      "scheduleType": "cron",
+      "name": "Default",
+      "id": "Default"
+    },
+    {
+      "occurrences": "1",
+      "period": "1 Day",
+      "name": "DP-Schedule-RunOnce",
+      "id": "DefaultSchedule",
+      "type": "Schedule",
+      "startAt": "FIRST_ACTIVATION_DATE_TIME"
+    },
+    {
+      "role": "DataPipelineDefaultRole",
+      "subject": "RDS to S3 copy failed",
+      "name": "DP-Failure-Alarm",
+      "id": "SnsAlarmId1",
+      "message": "There was a problem executing #{node.name} at for period #{node.@scheduledStartTime} to #{node.@scheduledEndTime}",
+      "type": "SnsAlarm",
+      "topicArn": "arn:aws:sns:eu-west-1:993251146127:data-pipeline-notice"
+    }
+  ],
+  "parameters": []
+}

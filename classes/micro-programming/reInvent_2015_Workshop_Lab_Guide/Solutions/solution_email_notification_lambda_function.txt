@@ -1,0 +1,34 @@
+// Set up AWS client
+var AWS = require('aws-sdk');
+var sns = new AWS.SNS();
+
+// Update AWS configuration to set region
+AWS.config.update({region : 'us-west-2'});
+
+// Set a high score threshold
+var TOP_SCORE = 300;
+
+exports.handler = function(event, context) {
+    var inflightRequests = 0;
+    event.Records.forEach(function(record) {
+        // Publish to SNS if the user scored above the threshold
+        if (new Number(record.dynamodb.NewImage.Score.N) > TOP_SCORE) {
+            inflightRequests++;
+            sns.publish({
+                    // TODO insert correct ARN here
+                    TopicArn: "arn:aws:sns:us-west-2:ACCOUNT_ID:TopScores", 
+                    Message: record.dynamodb.NewImage.Username.S + " scored more than " + TOP_SCORE
+                },
+                function(err, data) {
+                    if (err) {
+                        console.log(err);
+                    }
+                    else {
+                        if ((--inflightRequests) === 0) context.succeed("Successfully processed " + event.Records.length + " records.");
+                    }
+                }
+            ); 
+        }
+    });
+    if ((inflightRequests) === 0) context.succeed("Successfully processed " + event.Records.length + " records.");
+};
