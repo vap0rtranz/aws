@@ -1,3 +1,10 @@
+# this is an AWS inventory for RDS
+# you must supply an AWS IAM keypair with Read to RDS across specified regions
+# output is to STDOUT in white space delimited (except Tags are comma
+# seperated)
+# feel free to change the fields to any variable of the DBInstance boto class
+# but please sanitize changes to these fields
+
 import argparse
 from pprint import pprint
 import boto.rds
@@ -15,6 +22,7 @@ def get_rds_instances(region,fields):
       #for field in fields: 
         #instance."field" = str(instance."field")
       #  print(instance.field)
+# stuck sanitizing each field
       instance.id = str(instance.id)
       instance.instance_class = str(instance.instance_class) 
       instance.engine = str(instance.engine)
@@ -24,8 +32,11 @@ def get_rds_instances(region,fields):
       print instance.id, instance.instance_class, instance.engine, instance.multi_az, instance.availability_zone, instance.allocated_storage
 
 def main():
+# which regions to pull from
+# note AZs for each region are included
     regions = [ 'us-east-1','us-west-1','us-west-2','eu-west-1','sa-east-1',
                 'ap-southeast-1','ap-southeast-2','ap-northeast-1', 'eu-central-1', 'ap-northeast-2' ]
+# which fields to print from DBInstance class attributes
     fields = [ 'id', 'instance_class', 'engine', 'multi_az', 'availability_zone', 'allocated_storage' ]
     parser = argparse.ArgumentParser()
     parser.add_argument('access_key', help='Access Key');
